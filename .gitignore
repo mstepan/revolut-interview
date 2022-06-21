@@ -1,6 +1,14 @@
 # Compiled class file
 *.class
 
+# Created by .ignore support plugin (hsz.mobi)
+### Java template
+# Compiled class file
+*.class
+
+# Maven target folder
+target
+
 # Log file
 *.log
 

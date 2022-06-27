@@ -8,7 +8,7 @@ public final class ArrayUtils {
         throw new IllegalStateException("Can't instantiate utility-only class");
     }
 
-    private static <T> T checkNotNull(T obj, Supplier<String> errorMsg) {
+    public static <T> T checkNotNull(T obj, Supplier<String> errorMsg) {
         if (obj == null) {
             throw new IllegalArgumentException(errorMsg.get());
         }

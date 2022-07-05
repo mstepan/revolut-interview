@@ -1,21 +1,29 @@
 package org.max.revolut.lb;
 
-import java.util.LinkedHashSet;
-import java.util.Objects;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.Random;
-import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.regex.Pattern;
+
 
 public class InMemoryLoadBalancer implements LoadBalancer {
 
     private static final int MAX_POOL_SIZE = 10;
 
-    private final Set<String> registeredAddresses = new LinkedHashSet<>();
+    private final List<String> registeredAddresses = new ArrayList<>();
 
-    private int curIndex;
+    private final ReadWriteLock lock = new ReentrantReadWriteLock();
 
-    private final Object mutex = new Object();
+    private final Lock readLock = lock.readLock();
 
+    private final Lock writeLock = lock.writeLock();
+
+    private final AtomicInteger curIndex = new AtomicInteger(-1);
 
     private final Random rand;
 
@@ -25,66 +33,101 @@ public class InMemoryLoadBalancer implements LoadBalancer {
     }
 
 
+    /**
+     * time: O(1)
+     * space: O(1)
+     */
     @Override
     public Optional<String> getAny() {
 
-        String[] copy;
+        readLock.lock();
 
-        synchronized (mutex) {
+        try {
             if (registeredAddresses.isEmpty()) {
                 return Optional.empty();
             }
 
-            copy = makeSnapshot();
+            int randIndex = rand.nextInt(registeredAddresses.size());
+
+            return Optional.of(registeredAddresses.get(randIndex));
         }
-
-        int randIndex = rand.nextInt(copy.length);
-
-        assert randIndex >= 0 && randIndex < copy.length;
-
-        return Optional.of(copy[randIndex]);
+        finally {
+            readLock.unlock();
+        }
     }
 
+    /**
+     * time: O(1)
+     * space: O(1)
+     */
     @Override
     public Optional<String> getRoundRobin() {
 
-        String[] copy;
-        int indexToRet;
+        readLock.lock();
 
-        synchronized (mutex) {
+        try {
             if (registeredAddresses.isEmpty()) {
                 return Optional.empty();
             }
-
-            copy = makeSnapshot();
-            indexToRet = curIndex;
-            curIndex = (curIndex + 1) % copy.length;
+            int index = curIndex.updateAndGet(prevValue -> (prevValue + 1) % registeredAddresses.size());
+            return Optional.of(registeredAddresses.get(index));
         }
-
-        return Optional.of(copy[indexToRet]);
+        finally {
+            readLock.unlock();
+        }
     }
 
+    /**
+     * time: O(N)
+     * space: O(1)
+     */
     @Override
     public boolean register(String address) {
-        Objects.requireNonNull(address);
-        // regexp check for validity
+        checkNotNull(address);
+        checkValidAddress(address);
 
-        synchronized (mutex) {
+        readLock.lock();
+        try {
             if (registeredAddresses.contains(address)) {
                 return false;
             }
+            if (registeredAddresses.size() == MAX_POOL_SIZE) {
+                throw new IllegalStateException("Pool size exhausted");
+            }
+        }
+        finally {
+            readLock.unlock();
+        }
 
+        writeLock.lock();
+        try {
+            if (registeredAddresses.contains(address)) {
+                return false;
+            }
             if (registeredAddresses.size() == MAX_POOL_SIZE) {
                 throw new IllegalStateException("Pool size exhausted");
             }
 
             registeredAddresses.add(address);
         }
+        finally {
+            writeLock.unlock();
+        }
 
         return true;
     }
 
-    private String[] makeSnapshot() {
-        return registeredAddresses.toArray(new String[] {});
+    private static final Pattern ADDRESS_REGEXP = Pattern.compile("[\\d]{1,3}[.][\\d]{1,3}[.][\\d]{1,3}[.][\\d]{1,3}");
+
+    private void checkValidAddress(String address) {
+        if (!ADDRESS_REGEXP.matcher(address).matches()) {
+            throw new IllegalArgumentException("Incorrect 'address' detected: " + address);
+        }
+    }
+
+    private void checkNotNull(String address) {
+        if (address == null) {
+            throw new IllegalArgumentException("'address' can't be null");
+        }
     }
 }

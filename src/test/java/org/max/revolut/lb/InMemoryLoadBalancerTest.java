@@ -11,15 +11,14 @@ import org.junit.jupiter.api.Test;
 
 public class InMemoryLoadBalancerTest {
 
-
     @Test
     public void normalRegisterShouldBeFine() {
         LoadBalancer lb = new InMemoryLoadBalancer(133L);
 
-        assertTrue(lb.register("max.com"));
-        assertFalse(lb.register("max.com"));
+        assertTrue(lb.register("192.168.1.1"));
+        assertFalse(lb.register("192.168.1.1"));
 
-        assertTrue(lb.register("max123.com"));
+        assertTrue(lb.register("255.168.1.1"));
     }
 
     @Test
